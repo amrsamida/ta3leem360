@@ -15,3 +15,16 @@ def list_centers(city: str | None = None):
             if c["city"].lower() == city.lower()
         ]
     return centers
+if city:
+        results = [
+            c for c in results
+            if c["city"].lower() == city.lower()
+        ]
+
+    if q:
+        results = [
+            c for c in results
+            if q.lower() in c["name"].lower()
+        ]
+
+    return results
