@@ -1,4 +1,6 @@
 from fastapi import APIRouter, HTTPException
+from typing import List
+from app.models.center import Center
 
 router = APIRouter(prefix="/centers", tags=["Centers"])
 
@@ -21,7 +23,7 @@ def normalize_city(city: str) -> str | None:
 
 
 # ✅ LIST + FILTER + SEARCH + PAGINATION
-@router.get("/")
+@router.get("/", response_model=List[Center])
 def list_centers(
     city: str | None = None,
     q: str | None = None,
@@ -47,11 +49,11 @@ def list_centers(
             if q in c["name"].lower()
         ]
 
-    return results[offset : offset + limit]
+    return results[offset: offset + limit]
 
 
 # ✅ GET BY ID
-@router.get("/{center_id}")
+@router.get("/{center_id}", response_model=Center)
 def get_center(center_id: int):
     for center in centers:
         if center["id"] == center_id:
