@@ -1,118 +1,88 @@
-from fastapi import APIRouter, HTTPException
-from typing import List
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+from typing import List, Optional
 
-from app.models.center import Center, CenterCreate
+from app.database import SessionLocal
+from app.models.db_center import Center as DBCenter
+from app.models.center import Center, CenterCreate, CenterUpdate
 
 router = APIRouter(prefix="/centers", tags=["Centers"])
 
-# =====================================================
-# In-memory data (temporary – will be replaced by DB)
-# =====================================================
-centers: List[Center] = [
-    Center(id=1, name="Future Academy", city="Suez"),
-    Center(id=2, name="Smart Center", city="Cairo"),
-]
 
-# =====================================================
-# Helpers
-# =====================================================
-CITY_ALIASES = {
-    "cairo": ["cairo", "القاهرة"],
-    "suez": ["suez", "السويس"],
-}
-
-def normalize_city(city: str) -> str | None:
-    city = city.strip().lower()
-    for canonical, aliases in CITY_ALIASES.items():
-        if city in (alias.lower() for alias in aliases):
-            return canonical
-    return None
+# Dependency للحصول على Session
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
 
 
-# =====================================================
-# LIST + FILTER + SEARCH + PAGINATION
-# =====================================================
+# =========================
+# GET /centers
+# =========================
 @router.get("/", response_model=List[Center])
 def list_centers(
-    city: str | None = None,
-    q: str | None = None,
+    city: Optional[str] = None,
+    q: Optional[str] = None,
+    skip: int = 0,
     limit: int = 10,
-    offset: int = 0,
+    db: Session = Depends(get_db),
 ):
-    results = centers
+    query = db.query(DBCenter)
 
     if city:
-        normalized = normalize_city(city)
-        if not normalized:
-            return []
-        results = [c for c in results if c.city.lower() == normalized]
+        query = query.filter(DBCenter.city == city)
 
     if q:
-        q = q.lower()
-        results = [c for c in results if q in c.name.lower()]
+        query = query.filter(DBCenter.name.contains(q))
 
-    return results[offset : offset + limit]
+    centers = query.offset(skip).limit(limit).all()
+    return centers
 
 
-# =====================================================
-# CREATE
-# =====================================================
-@router.post("/", response_model=Center, status_code=201)
-def create_center(data: CenterCreate):
-    new_id = max((c.id for c in centers), default=0) + 1
+# =========================
+# GET /centers/{id}
+# =========================
+@router.get("/{center_id}", response_model=Center)
+def get_center(center_id: int, db: Session = Depends(get_db)):
+    center = db.query(DBCenter).filter(DBCenter.id == center_id).first()
 
-    new_center = Center(
-        id=new_id,
-        name=data.name,
-        city=data.city,
+    if not center:
+        raise HTTPException(status_code=404, detail="Center not found")
+
+    return center
+
+
+# =========================
+# POST /centers
+# =========================
+@router.post("/", response_model=Center)
+def create_center(center: CenterCreate, db: Session = Depends(get_db)):
+    db_center = DBCenter(
+        name=center.name,
+        city=center.city,
+        description=center.description,
     )
 
-    centers.append(new_center)
-    return new_center
+    db.add(db_center)
+    db.commit()
+    db.refresh(db_center)
+
+    return db_center
 
 
-# =====================================================
-# GET BY ID
-# =====================================================
-@router.get("/{center_id}", response_model=Center)
-def get_center(center_id: int):
-    for center in centers:
-        if center.id == center_id:
-            return center
-    raise HTTPException(status_code=404, detail="Center not found")
-
-
-# =====================================================
-# DELETE
-# =====================================================
+# =========================
+# DELETE /centers/{id}
+# =========================
 @router.delete("/{center_id}")
-def delete_center(center_id: int):
-    for index, center in enumerate(centers):
-        if center.id == center_id:
-            centers.pop(index)
-            return {"message": "Center deleted successfully"}
+def delete_center(center_id: int, db: Session = Depends(get_db)):
+    center = db.query(DBCenter).filter(DBCenter.id == center_id).first()
 
-    raise HTTPException(status_code=404, detail="Center not found")
-# =====================================================
-# UPDATE
-# =====================================================
-from app.models.center import CenterUpdate
+    if not center:
+        raise HTTPException(status_code=404, detail="Center not found")
 
-@router.put("/{center_id}", response_model=Center)
-def update_center(center_id: int, data: CenterUpdate):
-    for index, center in enumerate(centers):
-        if center.id == center_id:
-            updated_data = center.dict()
+    db.delete(center)
+    db.commit()
 
-            if data.name is not None:
-                updated_data["name"] = data.name
-
-            if data.city is not None:
-                updated_data["city"] = data.city
-
-            updated_center = Center(**updated_data)
-            centers[index] = updated_center
-
-            return updated_center
-
-    raise HTTPException(status_code=404, detail="Center not found")
+    return {"message": "Center deleted successfully"}
