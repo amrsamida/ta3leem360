@@ -93,3 +93,26 @@ def delete_center(center_id: int):
             return {"message": "Center deleted successfully"}
 
     raise HTTPException(status_code=404, detail="Center not found")
+# =====================================================
+# UPDATE
+# =====================================================
+from app.models.center import CenterUpdate
+
+@router.put("/{center_id}", response_model=Center)
+def update_center(center_id: int, data: CenterUpdate):
+    for index, center in enumerate(centers):
+        if center.id == center_id:
+            updated_data = center.dict()
+
+            if data.name is not None:
+                updated_data["name"] = data.name
+
+            if data.city is not None:
+                updated_data["city"] = data.city
+
+            updated_center = Center(**updated_data)
+            centers[index] = updated_center
+
+            return updated_center
+
+    raise HTTPException(status_code=404, detail="Center not found")
